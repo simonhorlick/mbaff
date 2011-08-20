@@ -2019,15 +2019,20 @@ static int x264_slice_write( x264_t *h )
     h->mb.i_last_dqp = 0;
     h->mb.field_decoding_flag = 0;
 
+    int i_last_qp_backup;
+    int i_last_dqp_backup;
+    int field_decoding_flag_backup;    
+
     i_mb_y = h->sh.i_first_mb / h->mb.i_mb_width;
     i_mb_x = h->sh.i_first_mb % h->mb.i_mb_width;
     i_skip = 0;
 
+    int interlacecost[2];
+    interlacecost[0] = interlacecost[1] = -1;
+    int final = 1;
+
     while( 1 )
     {
-        mb_xy = i_mb_x + i_mb_y * h->mb.i_mb_width;
-        int mb_spos = bs_pos(&h->out.bs) + x264_cabac_pos(&h->cabac);
-
         if( !(i_mb_y & SLICE_MBAFF) )
         {
             if( x264_bitstream_check_buffer( h ) )
@@ -2055,6 +2060,100 @@ static int x264_slice_write( x264_t *h )
             }
         }
 
+        /* MBAFF brute force RD
+         * For each super-mb:
+         *  1. Encode frame pair
+         *  2. Encode field pair
+         *  3. Encode best
+         */
+#define MBAFF_ORDER(block_xy) (h->sh.b_mbaff*(2*(block_xy % h->mb.i_mb_width) + h->mb.i_mb_width*((block_xy / h->mb.i_mb_width)&~1) + ((block_xy / h->mb.i_mb_width)&1)) + (!h->sh.b_mbaff)*block_xy)
+
+        if( (i_mb_y&1) == 0 )
+        {
+             final = !final;
+            //if( interlacecost[0] == -1 )
+            //{
+            if(!final)
+            {
+                printf("mb %d,%d\n", i_mb_x, i_mb_y);
+                printf("  progressive\n");
+                // not yet tried to encode this pair, do progressive
+                // first, save state
+                mv_bits_bak = h->stat.frame.i_mv_bits;
+                tex_bits_bak = h->stat.frame.i_tex_bits;
+                memcpy( &cabac_bak, &h->cabac, sizeof(x264_cabac_t) );
+                cabac_prevbyte_bak = h->cabac.p[-1];
+
+                i_last_qp_backup = h->mb.i_last_qp;
+                i_last_dqp_backup = h->mb.i_last_dqp;
+                field_decoding_flag_backup = h->mb.field_decoding_flag;
+                bs_bak = h->out.bs;
+                
+                //final = 0;
+                interlacecost[0] = 0;
+                h->mb.b_interlaced = 0;
+                h->mb.b_reencode_mb = 0;
+            }
+            else
+            //}
+            //else if( interlacecost[1] == -1 )
+            {
+                printf("  interlaced\n");
+                // not yet tried to encode this pair as fields
+
+                // restore state
+                int prevmb = MBAFF_ORDER(mb_xy) - 1;
+                i_mb_x=((prevmb % (2*h->mb.i_mb_width)) / 2);
+                i_mb_y=((prevmb / (2*h->mb.i_mb_width))*2);
+
+                h->stat.frame.i_mv_bits = mv_bits_bak;
+                h->stat.frame.i_tex_bits = tex_bits_bak;
+                memcpy( &h->cabac, &cabac_bak, sizeof(x264_cabac_t) );
+                h->cabac.p[-1] = cabac_prevbyte_bak;
+
+                h->mb.i_last_qp = i_last_qp_backup;
+                h->mb.i_last_dqp = i_last_dqp_backup;
+                h->mb.field_decoding_flag = field_decoding_flag_backup;
+                h->out.bs = bs_bak;
+
+                interlacecost[1] = 0;
+                h->mb.b_interlaced = 1;
+                h->mb.b_reencode_mb=1;
+            }
+            /*else
+            {
+                // got both costs, encode best
+
+                // restore state
+                int prevmb = MBAFF_ORDER(mb_xy) - 1;
+                i_mb_x=((prevmb % (2*h->mb.i_mb_width)) / 2);
+                i_mb_y=((prevmb / (2*h->mb.i_mb_width))*2);
+
+                h->stat.frame.i_mv_bits = mv_bits_bak;
+                h->stat.frame.i_tex_bits = tex_bits_bak;
+                memcpy( &h->cabac, &cabac_bak, offsetof(x264_cabac_t, f8_bits_encoded) );
+                h->cabac.p[-1] = cabac_prevbyte_bak;
+
+                h->mb.i_last_qp = i_last_qp_backup;
+                h->mb.i_last_dqp = i_last_dqp_backup;
+                h->mb.field_decoding_flag = field_decoding_flag_backup;
+                h->out.bs = bs_bak;
+
+                h->mb.b_interlaced = interlacecost[0] > interlacecost[1];
+
+                printf("  costs %d interlaced, %d progressive\n", interlacecost[1], interlacecost[0]);
+
+                final = 1;
+
+                interlacecost[0] = interlacecost[1] = -1;
+            }*/
+        }
+
+        mb_xy = i_mb_x + i_mb_y * h->mb.i_mb_width;
+        int mb_spos = bs_pos(&h->out.bs) + x264_cabac_pos(&h->cabac);
+
+        printf("  %d,%d\n", i_mb_x, i_mb_y);
+
         if( i_mb_x == 0 && !h->mb.b_reencode_mb )
             x264_fdec_filter_row( h, i_mb_y, 1 );
 
@@ -2065,7 +2164,7 @@ static int x264_slice_write( x264_t *h )
                 if( !(i_mb_y&1) )
                 {
                     /* FIXME: VSAD is fast but fairly poor at choosing the best interlace type. */
-                    h->mb.b_interlaced = x264_field_vsad( h, i_mb_x, i_mb_y );
+                    //h->mb.b_interlaced = x264_field_vsad( h, i_mb_x, i_mb_y );
                     memcpy( &h->zigzagf, MB_INTERLACED ? &h->zigzagf_interlaced : &h->zigzagf_progressive, sizeof(h->zigzagf) );
                     if( !MB_INTERLACED && (i_mb_y+2) == h->mb.i_mb_height )
                         x264_expand_border_mbpair( h, i_mb_x, i_mb_y );
@@ -2130,6 +2229,8 @@ reencode:
 
         int total_bits = bs_pos(&h->out.bs) + x264_cabac_pos(&h->cabac);
         int mb_size = total_bits - mb_spos;
+
+        if(!final) interlacecost[h->mb.b_interlaced] += mb_size;
 
         if( slice_max_size )
         {
@@ -2266,7 +2367,7 @@ reencode:
         if( b_deblock )
             x264_macroblock_deblock_strength( h );
 
-        x264_ratecontrol_mb( h, mb_size );
+        if( final ) x264_ratecontrol_mb( h, mb_size );
 
         if( mb_xy == h->sh.i_last_mb )
             break;
