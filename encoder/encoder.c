@@ -2019,9 +2019,11 @@ static int x264_slice_write( x264_t *h )
     h->mb.i_last_dqp = 0;
     h->mb.field_decoding_flag = 0;
 
+    int i_qp_backup;
     int i_last_qp_backup;
     int i_last_dqp_backup;
     int field_decoding_flag_backup;    
+    int i_mb_prev_xy_backup;
 
     i_mb_y = h->sh.i_first_mb / h->mb.i_mb_width;
     i_mb_x = h->sh.i_first_mb % h->mb.i_mb_width;
@@ -2072,7 +2074,6 @@ static int x264_slice_write( x264_t *h )
         {
             if( interlacecost[0] == -1 )
             {
-                printf("mb %d,%d\n", i_mb_x, i_mb_y);
                 printf("  progressive\n");
                 // not yet tried to encode this pair, do progressive
                 // first, save state
@@ -2081,11 +2082,13 @@ static int x264_slice_write( x264_t *h )
                 memcpy( &cabac_bak, &h->cabac, sizeof(x264_cabac_t) );
                 cabac_prevbyte_bak = h->cabac.p[-1];
 
+                i_qp_backup = h->mb.i_qp;
                 i_last_qp_backup = h->mb.i_last_qp;
                 i_last_dqp_backup = h->mb.i_last_dqp;
                 field_decoding_flag_backup = h->mb.field_decoding_flag;
+                i_mb_prev_xy_backup = h->mb.i_mb_prev_xy;
                 bs_bak = h->out.bs;
-                
+
                 final = 0;
                 interlacecost[0] = 0;
                 h->mb.b_interlaced = 0;
@@ -2107,9 +2110,11 @@ static int x264_slice_write( x264_t *h )
                 memcpy( &h->cabac, &cabac_bak, sizeof(x264_cabac_t) );
                 h->cabac.p[-1] = cabac_prevbyte_bak;
 
+                h->mb.i_qp = i_qp_backup;
                 h->mb.i_last_qp = i_last_qp_backup;
                 h->mb.i_last_dqp = i_last_dqp_backup;
                 h->mb.field_decoding_flag = field_decoding_flag_backup;
+                h->mb.i_mb_prev_xy = i_mb_prev_xy_backup;
                 h->out.bs = bs_bak;
 
                 interlacecost[1] = 0;
@@ -2130,9 +2135,11 @@ static int x264_slice_write( x264_t *h )
                 memcpy( &h->cabac, &cabac_bak, sizeof(x264_cabac_t) );
                 h->cabac.p[-1] = cabac_prevbyte_bak;
 
+                h->mb.i_qp = i_qp_backup;
                 h->mb.i_last_qp = i_last_qp_backup;
                 h->mb.i_last_dqp = i_last_dqp_backup;
                 h->mb.field_decoding_flag = field_decoding_flag_backup;
+                h->mb.i_mb_prev_xy = i_mb_prev_xy_backup;
                 h->out.bs = bs_bak;
 
                 h->mb.b_interlaced = interlacecost[0] > interlacecost[1];
@@ -2148,7 +2155,7 @@ static int x264_slice_write( x264_t *h )
         mb_xy = i_mb_x + i_mb_y * h->mb.i_mb_width;
         int mb_spos = bs_pos(&h->out.bs) + x264_cabac_pos(&h->cabac);
 
-        printf("  %d,%d\n", i_mb_x, i_mb_y);
+        printf("\nmacroblock %d,%d (%d)\n", i_mb_x, i_mb_y, MBAFF_ORDER(mb_xy));
 
         if( i_mb_x == 0 && !h->mb.b_reencode_mb )
             x264_fdec_filter_row( h, i_mb_y, 1 );
