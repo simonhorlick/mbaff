@@ -2119,7 +2119,7 @@ redo_bruteforce:
 
                 interlacecost[1] = 0;
                 h->mb.b_interlaced = 1;
-                //h->mb.b_reencode_mb=1;
+                h->mb.b_reencode_mb=1;
             }
             else
             {
@@ -2143,6 +2143,7 @@ redo_bruteforce:
                 h->out.bs = bs_bak;
 
                 h->mb.b_interlaced = interlacecost[0] > interlacecost[1];
+                h->mb.b_reencode_mb=1;
 
                 printf("  costs %d interlaced, %d progressive\n", interlacecost[1], interlacecost[0]);
 
