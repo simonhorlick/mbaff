@@ -2061,7 +2061,7 @@ static int x264_slice_write( x264_t *h )
                 }
             }
         }
-
+redo_bruteforce:
         /* MBAFF brute force RD
          * For each super-mb:
          *  1. Encode frame pair
@@ -2296,6 +2296,8 @@ reencode:
         /* save cache */
         x264_macroblock_cache_save( h );
 
+        if(final)
+        {
         /* accumulate mb stats */
         h->stat.frame.i_mb_count[h->mb.i_type]++;
 
@@ -2365,6 +2367,7 @@ reencode:
             }
             h->stat.frame.i_mb_field[b_intra?0:b_skip?2:1] += MB_INTERLACED;
         }
+        }
 
         /* calculate deblock strength values (actual deblocking is done per-row along with hpel) */
         if( b_deblock )
@@ -2387,6 +2390,7 @@ reencode:
             i_mb_y++;
             i_mb_x = 0;
         }
+        if(!final) goto redo_bruteforce;
     }
     h->out.nal[h->out.i_nal].i_last_mb = h->sh.i_last_mb;
 
