@@ -2033,6 +2033,10 @@ static int x264_slice_write( x264_t *h )
     interlacecost[0] = interlacecost[1] = -1;
     int final = 1;
 
+    int correct = 0;
+
+    printf("\n\nframe %d:\n", h->fdec->i_frame);
+
     while( 1 )
     {
         if( !(i_mb_y & SLICE_MBAFF) )
@@ -2074,7 +2078,6 @@ redo_bruteforce:
         {
             if( interlacecost[0] == -1 )
             {
-                printf("  progressive\n");
                 // not yet tried to encode this pair, do progressive
                 // first, save state
                 mv_bits_bak = h->stat.frame.i_mv_bits;
@@ -2096,7 +2099,6 @@ redo_bruteforce:
             }
             else if( interlacecost[1] == -1 )
             {
-                printf("  interlaced\n");
                 // not yet tried to encode this pair as fields
 
                 // restore state
@@ -2143,9 +2145,20 @@ redo_bruteforce:
                 h->out.bs = bs_bak;
 
                 h->mb.b_interlaced = interlacecost[0] > interlacecost[1];
-                h->mb.b_reencode_mb=1;
+                int metric = x264_field_vsad( h, i_mb_x, i_mb_y );
+                int newmetric;
+                if(h->mb.i_type < P_L0) // intra block
+                    newmetric = x264_field_vsad( h, i_mb_x, i_mb_y );
+                else
+                    newmetric = 0; // MODE WITH LESS MOTION COMPENSATION SAD
 
-                printf("  costs %d interlaced, %d progressive\n", interlacecost[1], interlacecost[0]);
+                printf("%s", h->mb.b_interlaced == metric ? "." : "*");
+
+                if( (interlacecost[0] == interlacecost[1]) ||
+                     (interlacecost[0] > interlacecost[1]) == metric )
+                    correct++;
+
+                h->mb.b_reencode_mb=1;
 
                 final = 1;
 
@@ -2156,7 +2169,7 @@ redo_bruteforce:
         mb_xy = i_mb_x + i_mb_y * h->mb.i_mb_width;
         int mb_spos = bs_pos(&h->out.bs) + x264_cabac_pos(&h->cabac);
 
-        printf("\nmacroblock %d,%d (%d)\n", i_mb_x, i_mb_y, MBAFF_ORDER(mb_xy));
+        //printf("\nmacroblock %d,%d (%d)\n", i_mb_x, i_mb_y, MBAFF_ORDER(mb_xy));
 
         if( i_mb_x == 0 && !h->mb.b_reencode_mb )
             x264_fdec_filter_row( h, i_mb_y, 1 );
@@ -2390,10 +2403,13 @@ reencode:
         {
             i_mb_y++;
             i_mb_x = 0;
+            if(final) printf("\n");
         }
         if(!final) goto redo_bruteforce;
     }
     h->out.nal[h->out.i_nal].i_last_mb = h->sh.i_last_mb;
+
+    printf("correct: %d/%d = %f", correct, h->mb.i_mb_width*h->mb.i_mb_height, (float)correct / (float)(h->mb.i_mb_width*h->mb.i_mb_height));
 
     if( h->param.b_cabac )
     {
