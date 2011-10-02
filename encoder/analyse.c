@@ -1407,21 +1407,6 @@ static void x264_mb_analyse_inter_p16x16_simple( x264_t *h, x264_mb_analysis_t *
         CP32( h->mb.mvr[0][i_ref][h->mb.i_mb_xy], m.mv );
         CP32( a->l0.mvc[i_ref][0], m.mv );
 
-        /* early termination
-         * SSD threshold would probably be better than SATD */
-        if( i_ref == 0
-            && a->b_try_skip
-            && m.cost-m.cost_mv < 300*a->i_lambda
-            &&  abs(m.mv[0]-h->mb.cache.pskip_mv[0])
-              + abs(m.mv[1]-h->mb.cache.pskip_mv[1]) <= 1
-            && x264_macroblock_probe_pskip( h ) )
-        {
-            h->mb.i_type = P_SKIP;
-            x264_analyse_update_cache( h, a );
-            assert( h->mb.cache.pskip_mv[1] <= h->mb.mv_max_spel[1] || h->i_thread_frames == 1 );
-            return;
-        }
-
         m.cost += m.i_ref_cost;
         i_halfpel_thresh += m.i_ref_cost;
 
