@@ -1399,17 +1399,9 @@ static void x264_mb_analyse_inter_p16x16_simple( x264_t *h, x264_mb_analysis_t *
         LOAD_WPELS( &m, h->mb.pic.p_fref_w[i_ref], 0, i_ref, 0, 0 );
 
         x264_mb_predict_mv_16x16( h, 0, i_ref, m.mvp );
-
-        if( h->mb.ref_blind_dupe == i_ref )
-        {
-            CP32( m.mv, a->l0.mvc[0][0] );
-            x264_me_refine_qpel_refdupe( h, &m, p_halfpel_thresh );
-        }
-        else
-        {
-            x264_mb_predict_mv_ref16x16( h, 0, i_ref, mvc, &i_mvc );
-            x264_me_search_ref( h, &m, mvc, i_mvc, p_halfpel_thresh );
-        }
+        
+        x264_mb_predict_mv_ref16x16( h, 0, i_ref, mvc, &i_mvc );
+        x264_me_search_ref( h, &m, mvc, i_mvc, p_halfpel_thresh );
 
         /* save mv for predicting neighbors */
         CP32( h->mb.mvr[0][i_ref][h->mb.i_mb_xy], m.mv );
