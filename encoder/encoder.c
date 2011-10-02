@@ -32,6 +32,8 @@
 #include "ratecontrol.h"
 #include "macroblock.h"
 #include "me.h"
+#include "analyse.h"
+#include "common/macroblock.h"
 
 #if HAVE_VISUALIZE
 #include "common/visualize.h"
@@ -2028,6 +2030,8 @@ static int x264_slice_write( x264_t *h )
         mb_xy = i_mb_x + i_mb_y * h->mb.i_mb_width;
         int mb_spos = bs_pos(&h->out.bs) + x264_cabac_pos(&h->cabac);
 
+        printf("macroblock (%d, %d)\n", i_mb_x, i_mb_y);
+
         if( !(i_mb_y & SLICE_MBAFF) )
         {
             if( x264_bitstream_check_buffer( h ) )
@@ -2065,7 +2069,18 @@ static int x264_slice_write( x264_t *h )
                 if( !(i_mb_y&1) )
                 {
                     /* FIXME: VSAD is fast but fairly poor at choosing the best interlace type. */
-                    h->mb.b_interlaced = x264_field_vsad( h, i_mb_x, i_mb_y );
+                    if( h->sh.i_type == SLICE_TYPE_I )
+                        h->mb.b_interlaced = x264_field_vsad( h, i_mb_x, i_mb_y );
+                    else
+                    {
+                        h->mb.b_interlaced = 0;
+                        cache_load_inter( h, i_mb_x, i_mb_y, 1 );
+                        int costp = x264_macroblock_analyse_interlace_mode( h );
+                        h->mb.b_interlaced = 1;
+                        cache_load_inter( h, i_mb_x, i_mb_y, 1 );
+                        int costi = x264_macroblock_analyse_interlace_mode( h );
+                        h->mb.b_interlaced = costi <= costp;
+                    }
                     memcpy( &h->zigzagf, MB_INTERLACED ? &h->zigzagf_interlaced : &h->zigzagf_progressive, sizeof(h->zigzagf) );
                     if( !MB_INTERLACED && (i_mb_y+2) == h->mb.i_mb_height )
                         x264_expand_border_mbpair( h, i_mb_x, i_mb_y );

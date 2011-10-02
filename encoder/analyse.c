@@ -1376,6 +1376,85 @@ static void x264_mb_analyse_inter_p16x16( x264_t *h, x264_mb_analysis_t *a )
     }
 }
 
+static void x264_mb_analyse_inter_p16x16_simple( x264_t *h, x264_mb_analysis_t *a )
+{
+    x264_me_t m;
+    int i_mvc;
+    ALIGNED_4( int16_t mvc[8][2] );
+    int i_halfpel_thresh = INT_MAX;
+    int *p_halfpel_thresh = (a->b_early_terminate && h->mb.pic.i_fref[0]>1) ? &i_halfpel_thresh : NULL;
+
+    /* 16x16 Search on all ref frame */
+    m.i_pixel = PIXEL_16x16;
+    LOAD_FENC( &m, h->mb.pic.p_fenc, 0, 0 );
+
+    a->l0.me16x16.cost = INT_MAX;
+    for( int i_ref = 0; i_ref < h->mb.pic.i_fref[0]; i_ref++ )
+    {
+        m.i_ref_cost = REF_COST( 0, i_ref );
+        i_halfpel_thresh -= m.i_ref_cost;
+
+        /* search with ref */
+        LOAD_HPELS( &m, h->mb.pic.p_fref[0][i_ref], 0, i_ref, 0, 0 );
+        LOAD_WPELS( &m, h->mb.pic.p_fref_w[i_ref], 0, i_ref, 0, 0 );
+
+        x264_mb_predict_mv_16x16( h, 0, i_ref, m.mvp );
+
+        if( h->mb.ref_blind_dupe == i_ref )
+        {
+            CP32( m.mv, a->l0.mvc[0][0] );
+            x264_me_refine_qpel_refdupe( h, &m, p_halfpel_thresh );
+        }
+        else
+        {
+            x264_mb_predict_mv_ref16x16( h, 0, i_ref, mvc, &i_mvc );
+            x264_me_search_ref( h, &m, mvc, i_mvc, p_halfpel_thresh );
+        }
+
+        /* save mv for predicting neighbors */
+        CP32( h->mb.mvr[0][i_ref][h->mb.i_mb_xy], m.mv );
+        CP32( a->l0.mvc[i_ref][0], m.mv );
+
+        /* early termination
+         * SSD threshold would probably be better than SATD */
+        if( i_ref == 0
+            && a->b_try_skip
+            && m.cost-m.cost_mv < 300*a->i_lambda
+            &&  abs(m.mv[0]-h->mb.cache.pskip_mv[0])
+              + abs(m.mv[1]-h->mb.cache.pskip_mv[1]) <= 1
+            && x264_macroblock_probe_pskip( h ) )
+        {
+            h->mb.i_type = P_SKIP;
+            x264_analyse_update_cache( h, a );
+            assert( h->mb.cache.pskip_mv[1] <= h->mb.mv_max_spel[1] || h->i_thread_frames == 1 );
+            return;
+        }
+
+        m.cost += m.i_ref_cost;
+        i_halfpel_thresh += m.i_ref_cost;
+
+        if( m.cost < a->l0.me16x16.cost )
+            h->mc.memcpy_aligned( &a->l0.me16x16, &m, sizeof(x264_me_t) );
+    }
+
+    x264_macroblock_cache_ref( h, 0, 0, 4, 4, 0, a->l0.me16x16.i_ref );
+    assert( a->l0.me16x16.mv[1] <= h->mb.mv_max_spel[1] || h->i_thread_frames == 1 );
+
+    h->mb.i_type = P_L0;
+    if( a->i_mbrd )
+    {
+        x264_mb_init_fenc_cache( h, a->i_mbrd >= 2 || h->param.analyse.inter & X264_ANALYSE_PSUB8x8 );
+        if( a->l0.me16x16.i_ref == 0 && M32( a->l0.me16x16.mv ) == M32( h->mb.cache.pskip_mv ) && !a->b_force_intra )
+        {
+            h->mb.i_partition = D_16x16;
+            x264_macroblock_cache_mv_ptr( h, 0, 0, 4, 4, 0, a->l0.me16x16.mv );
+            a->l0.i_rd16x16 = x264_rd_cost_mb( h, a->i_lambda2 );
+            if( !(h->mb.i_cbp_luma|h->mb.i_cbp_chroma) )
+                h->mb.i_type = P_SKIP;
+        }
+    }
+}
+
 static void x264_mb_analyse_inter_p8x8_mixed_ref( x264_t *h, x264_mb_analysis_t *a )
 {
     x264_me_t m;
@@ -2907,6 +2986,24 @@ static inline void x264_mb_analyse_qp_rd( x264_t *h, x264_mb_analysis_t *a )
         if( cost > bcost )
             h->mb.b_transform_8x8 ^= 1;
     }
+}
+
+int x264_macroblock_analyse_interlace_mode( x264_t *h )
+{
+    x264_mb_analysis_t analysis;
+
+    // calculate qp here?
+
+    x264_mb_analyse_init( h, &analysis, h->mb.i_qp );
+
+    x264_mb_analyse_load_costs( h, &analysis );
+
+    x264_mb_analyse_inter_p16x16_simple( h, &analysis );
+
+    int cost = analysis.l0.me16x16.cost;
+    printf("  inter cost is %d\n", cost);
+
+    return cost;
 }
 
 /*****************************************************************************

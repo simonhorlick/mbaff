@@ -826,6 +826,8 @@ static void ALWAYS_INLINE x264_macroblock_cache_load_neighbours( x264_t *h, int 
 
 void cache_load_inter( x264_t *h, int mb_x, int mb_y, int b_mbaff )
 {
+    x264_macroblock_cache_load_neighbours( h, mb_x, mb_y, b_mbaff );
+    
     // FIXME: don't do this loading twice
     int *left = h->mb.i_mb_left_xy;
     int top  = h->mb.i_mb_top_xy;

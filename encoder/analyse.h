@@ -31,6 +31,7 @@ float *x264_analyse_prepare_costs( x264_t *h );
 int x264_analyse_init_costs( x264_t *h, float *logs, int qp );
 void x264_analyse_free_costs( x264_t *h );
 void x264_analyse_weight_frame( x264_t *h, int end );
+int x264_macroblock_analyse_interlace_mode( x264_t *h );
 void x264_macroblock_analyse( x264_t *h );
 void x264_slicetype_decide( x264_t *h );
 
