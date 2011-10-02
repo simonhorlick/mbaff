@@ -1418,18 +1418,6 @@ static void x264_mb_analyse_inter_p16x16_simple( x264_t *h, x264_mb_analysis_t *
     assert( a->l0.me16x16.mv[1] <= h->mb.mv_max_spel[1] || h->i_thread_frames == 1 );
 
     h->mb.i_type = P_L0;
-    if( a->i_mbrd )
-    {
-        x264_mb_init_fenc_cache( h, a->i_mbrd >= 2 || h->param.analyse.inter & X264_ANALYSE_PSUB8x8 );
-        if( a->l0.me16x16.i_ref == 0 && M32( a->l0.me16x16.mv ) == M32( h->mb.cache.pskip_mv ) && !a->b_force_intra )
-        {
-            h->mb.i_partition = D_16x16;
-            x264_macroblock_cache_mv_ptr( h, 0, 0, 4, 4, 0, a->l0.me16x16.mv );
-            a->l0.i_rd16x16 = x264_rd_cost_mb( h, a->i_lambda2 );
-            if( !(h->mb.i_cbp_luma|h->mb.i_cbp_chroma) )
-                h->mb.i_type = P_SKIP;
-        }
-    }
 }
 
 static void x264_mb_analyse_inter_p8x8_mixed_ref( x264_t *h, x264_mb_analysis_t *a )
