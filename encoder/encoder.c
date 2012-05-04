@@ -2187,7 +2187,7 @@ static int x264_slice_write( x264_t *h )
      * other inaccuracies. */
     int overhead_guess = (NALU_OVERHEAD - (h->param.b_annexb && h->out.i_nal)) + 1 + h->param.b_cabac + 5;
     int slice_max_size = h->param.i_slice_max_size > 0 ? (h->param.i_slice_max_size-overhead_guess)*8 : 0;
-    int back_up_bitstream = slice_max_size || (!h->param.b_cabac && h->sps->i_profile_idc < PROFILE_HIGH);
+    int back_up_bitstream = 1; //slice_max_size || (!h->param.b_cabac && h->sps->i_profile_idc < PROFILE_HIGH);
     int starting_bits = bs_pos(&h->out.bs);
     int b_deblock = h->sh.i_disable_deblocking_filter_idc != 1;
     int b_hpel = h->fdec->b_kept_as_ref;
@@ -2239,6 +2239,19 @@ static int x264_slice_write( x264_t *h )
     // * encode each macroblock twice, once interlaced once progressive
     // * do a final encode where the lowest cost macroblock is used
     // * try taking quality of choice into account too?
+    //
+    // Program received signal EXC_BAD_ACCESS, Could not access memory.
+    // Reason: KERN_INVALID_ADDRESS at address: 0xffffffffffffffff
+    // [Switching to process 62289 thread 0x1703]
+    // 0x0000000100084cc1 in x264_bitstream_restore [inlined] () at /Users/simon/projects/x264/encoder/encoder.c:2171
+    // 2171	        h->cabac.p[-1] = bak->cabac_prevbyte;
+    // 
+
+    const int state_interlaced = 0;
+    const int state_progressive = 1;
+    const int state_final = 2;
+
+    int bf_state = state_interlaced;
 
     while( 1 )
     {
@@ -2373,6 +2386,30 @@ reencode:
 
         /* save cache */
         x264_macroblock_cache_save( h );
+
+        if( i_mb_y & SLICE_MBAFF )
+        {
+            i_mb_y--;
+            h->mb.i_mb_prev_xy = i_mb_y * h->mb.i_mb_stride - 1;
+            h->sh.i_last_mb = orig_last_mb;
+
+            if( bf_state == state_interlaced )
+            {
+                bf_state = state_progressive;
+                x264_bitstream_restore( h, &bs_bak[1], &i_skip, 1 );
+                continue;
+            }
+
+            if( bf_state == state_progressive )
+            {
+                bf_state = state_final;
+                x264_bitstream_restore( h, &bs_bak[1], &i_skip, 1 );
+                continue;
+            }
+
+            if( bf_state == state_final )
+                bf_state = state_interlaced;
+        }
 
         if( x264_ratecontrol_mb( h, mb_size ) < 0 )
         {
