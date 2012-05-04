@@ -2234,6 +2234,12 @@ static int x264_slice_write( x264_t *h )
     i_mb_x = h->sh.i_first_mb % h->mb.i_mb_width;
     i_skip = 0;
 
+    // TODO:
+    // * modify x264_bitstream_backup to work on arbitrary macroblocks
+    // * encode each macroblock twice, once interlaced once progressive
+    // * do a final encode where the lowest cost macroblock is used
+    // * try taking quality of choice into account too?
+
     while( 1 )
     {
         mb_xy = i_mb_x + i_mb_y * h->mb.i_mb_width;
