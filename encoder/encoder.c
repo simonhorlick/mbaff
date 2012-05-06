@@ -2239,13 +2239,6 @@ static int x264_slice_write( x264_t *h )
     // * encode each macroblock twice, once interlaced once progressive
     // * do a final encode where the lowest cost macroblock is used
     // * try taking quality of choice into account too?
-    //
-    // Program received signal EXC_BAD_ACCESS, Could not access memory.
-    // Reason: KERN_INVALID_ADDRESS at address: 0xffffffffffffffff
-    // [Switching to process 62289 thread 0x1703]
-    // 0x0000000100084cc1 in x264_bitstream_restore [inlined] () at /Users/simon/projects/x264/encoder/encoder.c:2171
-    // 2171	        h->cabac.p[-1] = bak->cabac_prevbyte;
-    // 
 
     const int state_interlaced = 0;
     const int state_progressive = 1;
@@ -2268,8 +2261,8 @@ static int x264_slice_write( x264_t *h )
                 x264_fdec_filter_row( h, i_mb_y, 0 );
         }
 
-        if( !(i_mb_y & SLICE_MBAFF) && back_up_bitstream )
-            x264_bitstream_backup( h, &bs_bak[0], i_skip, 0 );
+        if( !(i_mb_y & SLICE_MBAFF) && back_up_bitstream && bf_state == state_interlaced )
+            x264_bitstream_backup( h, &bs_bak[0], i_skip, 1 );
 
         if( PARAM_INTERLACED )
         {
@@ -2387,23 +2380,29 @@ reencode:
         /* save cache */
         x264_macroblock_cache_save( h );
 
+#define MBAFF_ORDER(block_xy) (h->sh.b_mbaff*(2*(block_xy % h->mb.i_mb_width) + h->mb.i_mb_width*((block_xy / h->mb.i_mb_width)&~1) + ((block_xy / h->mb.i_mb_width)&1)) + (!h->sh.b_mbaff)*block_xy)        
+
         if( i_mb_y & SLICE_MBAFF )
         {
-            i_mb_y--;
-            h->mb.i_mb_prev_xy = i_mb_y * h->mb.i_mb_stride - 1;
-            h->sh.i_last_mb = orig_last_mb;
-
             if( bf_state == state_interlaced )
             {
                 bf_state = state_progressive;
-                x264_bitstream_restore( h, &bs_bak[1], &i_skip, 1 );
+                int prevmb = MBAFF_ORDER(mb_xy) - 1;
+                i_mb_x=((prevmb % (2*h->mb.i_mb_width)) / 2);
+                i_mb_y=((prevmb / (2*h->mb.i_mb_width))*2);
+                x264_bitstream_restore( h, &bs_bak[0], &i_skip, 1 );
+                h->mb.b_reencode_mb = 1;
                 continue;
             }
 
             if( bf_state == state_progressive )
             {
                 bf_state = state_final;
-                x264_bitstream_restore( h, &bs_bak[1], &i_skip, 1 );
+                int prevmb = MBAFF_ORDER(mb_xy) - 1;
+                i_mb_x=((prevmb % (2*h->mb.i_mb_width)) / 2);
+                i_mb_y=((prevmb / (2*h->mb.i_mb_width))*2);
+                x264_bitstream_restore( h, &bs_bak[0], &i_skip, 1 );
+                h->mb.b_reencode_mb = 1;
                 continue;
             }
 
@@ -2413,7 +2412,7 @@ reencode:
 
         if( x264_ratecontrol_mb( h, mb_size ) < 0 )
         {
-            x264_bitstream_restore( h, &bs_bak[1], &i_skip, 1 );
+            x264_bitstream_restore( h, &bs_bak[0], &i_skip, 1 );
             h->mb.b_reencode_mb = 1;
             i_mb_x = 0;
             i_mb_y = i_mb_y - SLICE_MBAFF;
