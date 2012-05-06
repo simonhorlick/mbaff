@@ -2112,6 +2112,7 @@ typedef struct
     int last_qp;
     int last_dqp;
     int field_decoding_flag;
+    int mb_prev_xy;
 } x264_bs_bak_t;
 
 static ALWAYS_INLINE void x264_bitstream_backup( x264_t *h, x264_bs_bak_t *bak, int i_skip, int full )
@@ -2122,6 +2123,7 @@ static ALWAYS_INLINE void x264_bitstream_backup( x264_t *h, x264_bs_bak_t *bak, 
         bak->last_qp = h->mb.i_last_qp;
         bak->last_dqp = h->mb.i_last_dqp;
         bak->field_decoding_flag = h->mb.field_decoding_flag;
+        bak->mb_prev_xy = h->mb.i_mb_prev_xy;
     }
     else
     {
@@ -2156,6 +2158,7 @@ static ALWAYS_INLINE void x264_bitstream_restore( x264_t *h, x264_bs_bak_t *bak,
         h->mb.i_last_qp = bak->last_qp;
         h->mb.i_last_dqp = bak->last_dqp;
         h->mb.field_decoding_flag = bak->field_decoding_flag;
+        h->mb.i_mb_prev_xy = bak->mb_prev_xy;
     }
     else
     {
