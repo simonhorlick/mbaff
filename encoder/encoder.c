@@ -2113,9 +2113,11 @@ typedef struct
     int last_dqp;
     int field_decoding_flag;
     int mb_prev_xy;
+    int mb_x;
+    int mb_y;
 } x264_bs_bak_t;
 
-static ALWAYS_INLINE void x264_bitstream_backup( x264_t *h, x264_bs_bak_t *bak, int i_skip, int full )
+static ALWAYS_INLINE void x264_bitstream_backup( x264_t *h, x264_bs_bak_t *bak, int i_skip, int full, int mb_x, int mb_y )
 {
     if( full )
     {
@@ -2124,6 +2126,8 @@ static ALWAYS_INLINE void x264_bitstream_backup( x264_t *h, x264_bs_bak_t *bak, 
         bak->last_dqp = h->mb.i_last_dqp;
         bak->field_decoding_flag = h->mb.field_decoding_flag;
         bak->mb_prev_xy = h->mb.i_mb_prev_xy;
+        bak->mb_x = mb_x;
+        bak->mb_y = mb_y;
     }
     else
     {
@@ -2150,7 +2154,7 @@ static ALWAYS_INLINE void x264_bitstream_backup( x264_t *h, x264_bs_bak_t *bak, 
     }
 }
 
-static ALWAYS_INLINE void x264_bitstream_restore( x264_t *h, x264_bs_bak_t *bak, int *skip, int full )
+static ALWAYS_INLINE void x264_bitstream_restore( x264_t *h, x264_bs_bak_t *bak, int *skip, int full, int* mb_x, int* mb_y )
 {
     if( full )
     {
@@ -2159,6 +2163,8 @@ static ALWAYS_INLINE void x264_bitstream_restore( x264_t *h, x264_bs_bak_t *bak,
         h->mb.i_last_dqp = bak->last_dqp;
         h->mb.field_decoding_flag = bak->field_decoding_flag;
         h->mb.i_mb_prev_xy = bak->mb_prev_xy;
+        *mb_x = bak->mb_x;
+        *mb_y = bak->mb_y;
     }
     else
     {
@@ -2254,18 +2260,20 @@ static int x264_slice_write( x264_t *h )
         mb_xy = i_mb_x + i_mb_y * h->mb.i_mb_width;
         int mb_spos = bs_pos(&h->out.bs) + x264_cabac_pos(&h->cabac);
 
+        printf("mb %d %d (%d)\n", i_mb_x, i_mb_y, mb_xy);
+
         if( i_mb_x == 0 )
         {
             if( x264_bitstream_check_buffer( h ) )
                 return -1;
             if( !(i_mb_y & SLICE_MBAFF) && h->param.rc.i_vbv_buffer_size )
-                x264_bitstream_backup( h, &bs_bak[1], i_skip, 1 );
+                x264_bitstream_backup( h, &bs_bak[1], i_skip, 1, i_mb_x, i_mb_y );
             if( !h->mb.b_reencode_mb )
                 x264_fdec_filter_row( h, i_mb_y, 0 );
         }
 
         if( !(i_mb_y & SLICE_MBAFF) && back_up_bitstream && bf_state == state_interlaced )
-            x264_bitstream_backup( h, &bs_bak[0], i_skip, 1 );
+            x264_bitstream_backup( h, &bs_bak[0], i_skip, 1, i_mb_x, i_mb_y );
 
         if( PARAM_INTERLACED )
         {
@@ -2328,7 +2336,7 @@ reencode:
                     h->mb.i_skip_intra = 0;
                     h->mb.b_skip_mc = 0;
                     h->mb.b_overflow = 0;
-                    x264_bitstream_restore( h, &bs_bak[0], &i_skip, 0 );
+                    x264_bitstream_restore( h, &bs_bak[0], &i_skip, 0, &i_mb_x, &i_mb_y );
                     goto reencode;
                 }
             }
@@ -2355,7 +2363,7 @@ reencode:
             {
                 if( mb_xy-SLICE_MBAFF*h->mb.i_mb_stride != h->sh.i_first_mb )
                 {
-                    x264_bitstream_restore( h, &bs_bak[0], &i_skip, 0 );
+                    x264_bitstream_restore( h, &bs_bak[0], &i_skip, 0, &i_mb_x, &i_mb_y );
                     h->mb.b_reencode_mb = 1;
                     if( SLICE_MBAFF )
                     {
@@ -2383,17 +2391,12 @@ reencode:
         /* save cache */
         x264_macroblock_cache_save( h );
 
-#define MBAFF_ORDER(block_xy) (h->sh.b_mbaff*(2*(block_xy % h->mb.i_mb_width) + h->mb.i_mb_width*((block_xy / h->mb.i_mb_width)&~1) + ((block_xy / h->mb.i_mb_width)&1)) + (!h->sh.b_mbaff)*block_xy)        
-
         if( i_mb_y & SLICE_MBAFF )
         {
             if( bf_state == state_interlaced )
             {
                 bf_state = state_progressive;
-                int prevmb = MBAFF_ORDER(mb_xy) - 1;
-                i_mb_x=((prevmb % (2*h->mb.i_mb_width)) / 2);
-                i_mb_y=((prevmb / (2*h->mb.i_mb_width))*2);
-                x264_bitstream_restore( h, &bs_bak[0], &i_skip, 1 );
+                x264_bitstream_restore( h, &bs_bak[0], &i_skip, 1, &i_mb_x, &i_mb_y );
                 h->mb.b_reencode_mb = 1;
                 continue;
             }
@@ -2401,11 +2404,9 @@ reencode:
             if( bf_state == state_progressive )
             {
                 bf_state = state_final;
-                int prevmb = MBAFF_ORDER(mb_xy) - 1;
-                i_mb_x=((prevmb % (2*h->mb.i_mb_width)) / 2);
-                i_mb_y=((prevmb / (2*h->mb.i_mb_width))*2);
-                x264_bitstream_restore( h, &bs_bak[0], &i_skip, 1 );
+                x264_bitstream_restore( h, &bs_bak[0], &i_skip, 1, &i_mb_x, &i_mb_y );
                 h->mb.b_reencode_mb = 1;
+                h->mb.b_interlaced = h->mb.b_interlaced;
                 continue;
             }
 
@@ -2415,7 +2416,7 @@ reencode:
 
         if( x264_ratecontrol_mb( h, mb_size ) < 0 )
         {
-            x264_bitstream_restore( h, &bs_bak[0], &i_skip, 1 );
+            x264_bitstream_restore( h, &bs_bak[0], &i_skip, 1, &i_mb_x, &i_mb_y );
             h->mb.b_reencode_mb = 1;
             i_mb_x = 0;
             i_mb_y = i_mb_y - SLICE_MBAFF;
