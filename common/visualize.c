@@ -162,7 +162,7 @@ void x264_visualize_show( x264_t *h )
     static const int waitkey = 1;     /* Wait for enter after each frame */
     static const int drawbox = 1;     /* Draw box around each block */
     static const int borders = 0;     /* Display extrapolated borders outside frame */
-    static const int zoom = 2;        /* Zoom factor */
+    static const int zoom = 1;        /* Zoom factor */
 
     static const int pad = 32;
     pixel *const frame = h->fdec->plane[0];
@@ -180,7 +180,7 @@ void x264_visualize_show( x264_t *h )
         visualize_t *const v = (visualize_t*)h->visualize + mb_xy;
         const int mb_y = mb_xy / h->mb.i_mb_width;
         const int mb_x = mb_xy % h->mb.i_mb_width;
-        char *const col = GET_STRING( mb_types, v->i_type );
+        char *const col = h->mb.field[mb_xy] ? "white" : GET_STRING( mb_types, v->i_type );
         int x = mb_x*16*zoom;
         int y = mb_y*16*zoom;
         int l = 0;
@@ -195,8 +195,9 @@ void x264_visualize_show( x264_t *h )
         }
 
         disp_setcolor( col );
-        if( drawbox ) disp_rect( 0, x, y, x+16*zoom-1, y+16*zoom-1 );
+        if( drawbox ) disp_rect( 0, x+7, y+7, x+9*zoom-1, y+9*zoom-1 );
 
+    #if 0
         if( v->i_type==P_L0 || v->i_type==P_8x8 || v->i_type==P_SKIP )
         {
             /* Predicted (inter) mode, with motion vector */
@@ -330,6 +331,7 @@ void x264_visualize_show( x264_t *h )
                     }
             }
         }
+#endif
     }
 
     disp_sync();
